@@ -4,7 +4,9 @@
   "private": true,
   "description": "Application web progressive (PWA) Biblio",
   "type": "module",
-  "dependencies": { "@biblio/core": "*" },
+  "dependencies": {
+    "@biblio/core": "file:../../packages/core"
+  },
   "scripts": {
     "build": "node ../../scripts/build.mjs",
     "start": "node ../../scripts/serve.mjs"
