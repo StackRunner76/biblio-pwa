@@ -1,6 +1,6 @@
 import {
   loadState, saveState, seed, nextId, today, catName, uniqueValues, countBy, cleanIsbn, validateBook,
-  toCsv, importCsv, buildBackup, parseBackup, lookupIsbn,
+  toCsv, importCsv, buildBackup, parseBackup, lookupIsbn, DASH_WIDGETS, normalizeLayout, isDefaultLayout,
 } from '@biblio/core';
 import { configureScanner, scan, stopScan, scanPhoto, beep, H5_URL } from './scanner.js';
 import { initPwa, toast, pwaStatus, promptInstall, requestPersistence, checkForUpdate } from './pwa.js';
@@ -21,10 +21,19 @@ const cnt = (k) => countBy(S, k);
 const hue = (s) => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
 
 /* ───────── Éléments d’interface ───────── */
+const coverBg = (t) => `linear-gradient(135deg,hsl(${hue(t)} 55% 35%),#0f1b3d)`;
 const cover = (b, c = 'h-44') =>
   b.cover
-    ? `<img src="${esc(b.cover)}" class="${c} w-full object-cover rounded-xl" alt="Couverture de ${esc(b.titre)}" loading="lazy">`
-    : `<div class="${c} w-full rounded-xl flex items-end p-3 text-white font-bold text-sm" style="background:linear-gradient(135deg,hsl(${hue(b.titre)} 55% 35%),#0f1b3d)">${esc(b.titre)}</div>`;
+    ? `<img src="${esc(b.cover)}" class="${c} w-full object-cover rounded-xl" alt="Couverture de ${esc(b.titre)}" loading="lazy" data-t="${esc(b.titre)}" onerror="coverFail(this)">`
+    : `<div class="${c} w-full rounded-xl flex items-end p-3 text-white font-bold text-sm overflow-hidden" style="background:${coverBg(b.titre)};overflow-wrap:anywhere">${esc(b.titre)}</div>`;
+/* Couverture distante injoignable (hors ligne, lien mort) : on retombe sur la vignette colorée. */
+function coverFail(i) {
+  const d = document.createElement('div');
+  d.className = i.className.replace('object-cover', '') + ' flex items-end p-3 text-white font-bold text-sm overflow-hidden';
+  d.style.cssText = `background:${coverBg(i.dataset.t || '')};overflow-wrap:anywhere`;
+  d.textContent = i.dataset.t || '';
+  i.replaceWith(d);
+}
 
 const bars = (o) => {
   const e = Object.entries(o).sort((a, b) => b[1] - a[1]), m = Math.max(1, ...e.map((x) => x[1]));
@@ -81,9 +90,137 @@ addEventListener('keydown', (e) => {
 const V = (h) => (el('view').innerHTML = h);
 
 /* ───────── Tableau de bord ───────── */
+const fmtDate = (d) => {
+  const t = new Date(d + 'T00:00:00');
+  return isNaN(t) ? d : t.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+/** Blocs du tableau de bord : identifiant → { titre (pour l’accessibilité), taille, contenu }. */
+const dashWidgets = () => {
+  const stat = (id, label, n, href) => ({ titre: label, size: '', html: `<a href="#${href}" class="card p-5 block h-full hover:shadow-lg transition"><div class="text-slate-500 text-sm">${label}</div><div class="text-3xl font-bold text-blue-700">${n}</div></a>` });
+  const rec = [...S.books].sort((a, b) => b.ajout.localeCompare(a.ajout)).slice(0, 6);
+  return {
+    livres: stat('livres', 'Livres', S.books.length, 'catalogue'),
+    categories: stat('categories', 'Catégories', S.cats.length, 'parametres'),
+    auteurs: stat('auteurs', 'Auteurs', uniq('auteur').length, 'parametres'),
+    editeurs: stat('editeurs', 'Éditeurs', uniq('editeur').length, 'parametres'),
+    'par-categorie': { titre: 'Par catégorie', size: 'dw-wide', html: `<div class="card p-5 h-full"><h3 class="font-bold mb-3 pr-8">Par catégorie</h3>${bars(cnt('cat'))}</div>` },
+    'par-auteur': { titre: 'Par auteur', size: 'dw-wide', html: `<div class="card p-5 h-full"><h3 class="font-bold mb-3 pr-8">Par auteur</h3>${bars(cnt('auteur'))}</div>` },
+    recents: {
+      titre: 'Derniers ajouts',
+      size: 'dw-full',
+      html: `<div class="card p-5 h-full"><h3 class="font-bold mb-3 pr-8">Derniers ajouts</h3>${rec.length ? `<div class="rgrid">${rec.map((b) => `<button type="button" class="rc" onclick="detail(${b.id})" title="${esc(b.titre)}">${cover(b, 'ar-23')}<div class="font-bold text-sm leading-tight mt-2 clamp2">${esc(b.titre)}</div><div class="text-xs text-slate-500 clamp2">${esc(b.auteur)}</div><div class="text-xs text-slate-400 mt-1">${fmtDate(b.ajout)}</div></button>`).join('')}</div>` : '<p class="text-slate-400">Aucun livre pour le moment.</p>'}</div>`,
+    },
+  };
+};
+
 function dashboard() {
-  const rec = [...S.books].sort((a, b) => b.ajout.localeCompare(a.ajout)).slice(0, 5);
-  V(`<p class="text-slate-500 mb-4">Voici l’état de ${esc(S.lib)}.</p><div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">${[['Livres', S.books.length, 'catalogue'], ['Catégories', S.cats.length, 'parametres'], ['Auteurs', uniq('auteur').length, 'parametres'], ['Éditeurs', uniq('editeur').length, 'parametres']].map(([a, b, l]) => `<a href="#${l}" class="card p-5 block hover:shadow-lg transition"><div class="text-slate-500 text-sm">${a}</div><div class="text-3xl font-bold text-blue-700">${b}</div></a>`).join('')}</div><div class="grid lg:grid-cols-2 gap-4"><div class="card p-5"><h3 class="font-bold mb-3">Par catégorie</h3>${bars(cnt('cat'))}</div><div class="card p-5"><h3 class="font-bold mb-3">Par auteur</h3>${bars(cnt('auteur'))}</div></div><div class="card p-5 mt-4 overflow-x-auto"><h3 class="font-bold mb-3">Derniers ajouts</h3><table class="w-full text-sm">${rec.map((b) => `<tr class="border-t cursor-pointer" onclick="detail(${b.id})"><td class="py-2 font-medium">${esc(b.titre)}</td><td>${esc(b.auteur)}</td><td>${esc(cat(b.catId))}</td><td>${b.ajout}</td></tr>`).join('')}</table></div>`);
+  const W = dashWidgets(), layout = normalizeLayout(S.layout);
+  V(`<div class="flex justify-between items-center flex-wrap gap-2 mb-4"><p class="text-slate-500">Voici l’état de ${esc(S.lib)}. <span class="text-xs text-slate-400">Astuce : glissez un bloc par sa poignée ⠿ pour le déplacer.</span></p><button id="dreset" class="btn2 text-sm ${isDefaultLayout(layout) ? 'hidden' : ''}" onclick="resetLayout()">↺ Disposition d’origine</button></div><div id="dgrid" class="dgrid">${layout.map((id) => `<div class="dw ${W[id].size}" data-w="${id}">${W[id].html}<button type="button" class="dh" data-w="${id}" aria-label="Déplacer le bloc « ${esc(W[id].titre)} » (glisser, ou flèches du clavier)" title="Glisser pour déplacer">⠿</button></div>`).join('')}</div><div id="dlive" class="sr-only" aria-live="polite"></div>`);
+  initDrag();
+}
+
+function resetLayout() { S.layout = [...DASH_WIDGETS]; save(); dashboard(); }
+
+/** Enregistre l’ordre actuel des blocs (lu dans le DOM) et affiche/masque « Disposition d’origine ». */
+function persistLayout() {
+  const next = [...el('dgrid').children].map((d) => d.dataset.w);
+  if (next.join() !== normalizeLayout(S.layout).join()) { S.layout = next; save(); }
+  const r = el('dreset');
+  if (r) r.classList.toggle('hidden', isDefaultLayout(next));
+}
+
+/** Anime les blocs vers leur nouvelle place après un changement d’ordre (technique « FLIP »). */
+function flip(grid, mutate, skip) {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const items = [...grid.children].filter((n) => n !== skip);
+  const before = new Map(items.map((n) => [n, n.getBoundingClientRect()]));
+  mutate();
+  if (reduce) return;
+  items.forEach((n) => {
+    const a = before.get(n), b = n.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
+    if (dx || dy) n.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }], { duration: 180, easing: 'ease' });
+  });
+}
+
+/**
+ * Glisser-déposer des blocs (souris, tactile, stylet) via les Pointer Events, depuis la poignée ⠿.
+ * Une copie « fantôme » suit le doigt ; le bloc d’origine, estompé, change de place au survol des autres.
+ * Au clavier : poignée focalisée + flèches.
+ */
+function initDrag() {
+  const grid = el('dgrid');
+  if (!grid) return;
+  const live = (w) => {
+    const kids = [...grid.children], i = kids.indexOf(w);
+    const l = el('dlive');
+    if (l) l.textContent = `${w.querySelector('.dh').getAttribute('aria-label').match(/« (.*) »/)[1]} : position ${i + 1} sur ${kids.length}`;
+  };
+
+  grid.querySelectorAll('.dh').forEach((h) => {
+    h.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    h.addEventListener('keydown', (e) => {
+      const w = h.closest('.dw'), prev = ['ArrowUp', 'ArrowLeft'].includes(e.key), next = ['ArrowDown', 'ArrowRight'].includes(e.key);
+      if (!prev && !next) return;
+      e.preventDefault();
+      const sib = prev ? w.previousElementSibling : w.nextElementSibling;
+      if (!sib) return;
+      flip(grid, () => (prev ? grid.insertBefore(w, sib) : grid.insertBefore(w, sib.nextSibling)), null);
+      h.focus();
+      persistLayout();
+      live(w);
+    });
+
+    h.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      e.preventDefault();
+      const w = h.closest('.dw'), r = w.getBoundingClientRect();
+      const ox = e.clientX - r.left, oy = e.clientY - r.top;
+      const ghost = w.cloneNode(true);
+      ghost.classList.add('dw-ghost');
+      ghost.removeAttribute('data-w');
+      ghost.style.cssText = `width:${r.width}px;height:${r.height}px;left:${r.left}px;top:${r.top}px`;
+      document.body.appendChild(ghost);
+      w.classList.add('dw-src');
+      document.body.classList.add('dragging');
+
+      let px = e.clientX, py = e.clientY, last = 0, raf = 0;
+      const place = () => {
+        ghost.style.left = px - ox + 'px';
+        ghost.style.top = py - oy + 'px';
+        if (performance.now() - last < 140) return; // laisse la grille se stabiliser entre deux échanges
+        const t = document.elementFromPoint(px, py);
+        const over = t && t.closest && t.closest('.dw');
+        if (!over || over === w || over.parentNode !== grid) return;
+        last = performance.now();
+        const after = w.compareDocumentPosition(over) & Node.DOCUMENT_POSITION_FOLLOWING; // le survolé est après le déplacé
+        flip(grid, () => grid.insertBefore(w, after ? over.nextSibling : over), w);
+      };
+      const loop = () => { // défilement automatique près des bords de l’écran
+        const m = 70, v = py < m ? -(m - py) / 4 : py > innerHeight - m ? (py - (innerHeight - m)) / 4 : 0;
+        if (v) { scrollBy(0, Math.max(-24, Math.min(24, v))); place(); }
+        raf = requestAnimationFrame(loop);
+      };
+      const move = (ev) => { if (ev.pointerId !== e.pointerId) return; px = ev.clientX; py = ev.clientY; ev.preventDefault(); place(); };
+      const end = (ev) => {
+        if (ev.pointerId !== e.pointerId) return;
+        cancelAnimationFrame(raf);
+        removeEventListener('pointermove', move);
+        removeEventListener('pointerup', end);
+        removeEventListener('pointercancel', end);
+        ghost.remove();
+        w.classList.remove('dw-src');
+        document.body.classList.remove('dragging');
+        persistLayout();
+        live(w);
+      };
+      addEventListener('pointermove', move, { passive: false });
+      addEventListener('pointerup', end);
+      addEventListener('pointercancel', end);
+      raf = requestAnimationFrame(loop);
+    });
+  });
 }
 
 /* ───────── Catalogue ───────── */
@@ -306,7 +443,7 @@ function refreshPwaUi() {
 Object.assign(window, {
   toggleTheme, gsearch, resetF, setF, openForm, detail, del, M, scan, scanPhoto, lookup, showManual, saveBook, img,
   renCat, delCat, addCat, addP, renP, delP, exp, expJ, imp, impJ, setKey, setLib, setBeep, resetData,
-  installApp, keepData, checkUpdate: checkForUpdate,
+  installApp, keepData, checkUpdate: checkForUpdate, coverFail, resetLayout,
 });
 
 initPwa({ onChange: refreshPwaUi, warmUrls: [H5_URL] });

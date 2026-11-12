@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   isEan13Isbn, cleanIsbn, isValidIsbnFormat, seed, loadState, saveState, STORAGE_KEY, nextId, uniqueValues, countBy,
   validateBook, toCsv, parseCsv, importCsv, buildBackup, parseBackup, lookupIsbn,
+  DASH_WIDGETS, normalizeLayout, isDefaultLayout,
 } from '../src/index.js';
 
 const fakeStorage = (init = {}) => {
@@ -122,4 +123,29 @@ test('recherche ISBN : quota Google puis Open Library en secours', async () => {
 test('recherche ISBN : réseau coupé', async () => {
   const r = await lookupIsbn('9780132350884', { fetchImpl: async () => { throw new TypeError('offline'); } });
   assert.deepEqual([r.found, r.why], [false, 'net']);
+});
+
+test('tableau de bord : normalisation de la disposition', () => {
+  assert.deepEqual(normalizeLayout(undefined), DASH_WIDGETS);
+  assert.deepEqual(normalizeLayout('oups'), DASH_WIDGETS);
+  const custom = ['recents', 'livres', 'inconnu', 'recents'];
+  const n = normalizeLayout(custom);
+  assert.equal(n.length, DASH_WIDGETS.length);
+  assert.deepEqual(n.slice(0, 2), ['recents', 'livres']);
+  assert.deepEqual([...n].sort(), [...DASH_WIDGETS].sort(), 'inconnus/doublons écartés, manquants ajoutés');
+  assert.equal(isDefaultLayout(DASH_WIDGETS), true);
+  assert.equal(isDefaultLayout(['recents']), false);
+});
+
+test('tableau de bord : la disposition survit au stockage et à la sauvegarde JSON', () => {
+  const st = fakeStorage();
+  const s = loadState(st);
+  assert.deepEqual(s.layout, DASH_WIDGETS);
+  s.layout = [...DASH_WIDGETS].reverse();
+  saveState(st, s);
+  assert.deepEqual(loadState(st).layout, [...DASH_WIDGETS].reverse());
+  const b = JSON.parse(JSON.stringify(buildBackup(s)));
+  assert.deepEqual(parseBackup(b).layout, [...DASH_WIDGETS].reverse());
+  delete b.layout; // ancienne sauvegarde sans disposition
+  assert.deepEqual(parseBackup(b).layout, DASH_WIDGETS);
 });

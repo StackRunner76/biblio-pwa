@@ -1,3 +1,5 @@
+import { normalizeLayout } from './dashboard.js';
+
 /** Construit la sauvegarde JSON complète (livres, catégories, réglages). */
 export function buildBackup(s, now = new Date()) {
   return {
@@ -9,6 +11,7 @@ export function buildBackup(s, now = new Date()) {
     settings: { lib: s.lib, gbkey: s.gbkey || '', beep: s.beep !== false },
     cats: s.cats,
     extra: s.extra || { auteur: [], editeur: [] },
+    layout: normalizeLayout(s.layout),
     books: s.books,
   };
 }
@@ -41,5 +44,6 @@ export function parseBackup(d, fb = {}) {
     extra: { auteur: list('auteur'), editeur: list('editeur') },
     gbkey: gk !== null ? gk.trim() : fb.gbkey || '',
     beep: st.beep !== false,
+    layout: normalizeLayout(d.layout),
   };
 }

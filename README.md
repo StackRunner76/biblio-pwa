@@ -4,6 +4,7 @@ Application web progressive pour gérer une bibliothèque : catalogue, scan du c
 remplissage automatique via Google Books / Open Library, catégories, auteurs, éditeurs, statistiques, thème clair/sombre,
 import/export CSV et JSON.
 
+- **Tableau de bord personnalisable** : les blocs (compteurs, graphiques, derniers ajouts avec couvertures) se réorganisent par glisser-déposer (souris, tactile) ou au clavier (poignée ⠿ + flèches) ; la disposition est enregistrée et incluse dans la sauvegarde JSON.
 - **Sans authentification** : l’application s’ouvre directement, sans compte ni mot de passe.
 - **Hors ligne** : installable (ordinateur, Android, iPhone/iPad) et utilisable sans connexion.
 - **Données locales** : tout est enregistré dans le navigateur de l’appareil (`localStorage`). Aucun serveur, aucune base de données.
