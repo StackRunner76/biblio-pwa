@@ -4,10 +4,6 @@
   "private": true,
   "description": "Biblio — gestion de catalogue de bibliothèque, en PWA (monorepo)",
   "type": "module",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "engines": {
     "node": ">=20"
   },
